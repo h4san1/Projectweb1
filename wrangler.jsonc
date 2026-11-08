@@ -1,0 +1,12 @@
+{
+  // Konfigurasi untuk deploy ke Cloudflare (Workers static assets).
+  // Dengan file ini, `wrangler deploy` tidak lagi mencoba auto-config
+  // framework Vite (yang mensyaratkan Vite >= 6), melainkan mengunggah
+  // hasil build `dist/` sebagai aset statis.
+  "name": "projectweb1",
+  "compatibility_date": "2025-11-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  }
+}
