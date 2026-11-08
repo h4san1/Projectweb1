@@ -21,6 +21,7 @@ export type IconName =
   | 'eraser'
   | 'check'
   | 'undo'
+  | 'redo'
 
 const PATHS: Record<IconName, ReactElement> = {
   notes: (
@@ -142,6 +143,12 @@ const PATHS: Record<IconName, ReactElement> = {
     <>
       <path d="M4 4.5v5h5" />
       <path d="M5.2 9.5h6.4a6.4 6.4 0 0 1 0 12.8H8" />
+    </>
+  ),
+  redo: (
+    <>
+      <path d="M20 4.5v5h-5" />
+      <path d="M18.8 9.5h-6.4a6.4 6.4 0 0 0 0 12.8H16" />
     </>
   ),
 }

@@ -4,6 +4,7 @@ import { Icon, type IconName } from './Icon'
 
 const WIDTH = 960
 const HEIGHT = 640
+const HISTORY_LIMIT = 30
 
 type BrushType = 'pen' | 'pencil' | 'highlighter' | 'crayon' | 'brush'
 type Texture = 'solid' | 'pencil' | 'crayon' | 'brush'
@@ -81,10 +82,16 @@ export function DrawingCanvas({
   onChange: (dataUrl: string) => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const rootRef = useRef<HTMLDivElement | null>(null)
   // Layer dasar = konten yang sudah selesai; layer goresan = goresan aktif.
   const baseLayer = useRef<HTMLCanvasElement | null>(null)
   const strokeLayer = useRef<HTMLCanvasElement | null>(null)
   const inkByBrush = useRef<Record<BrushType, string>>({ ...DEFAULT_INK_BY_BRUSH })
+
+  // Riwayat disimpan sebagai snapshot PNG agar hemat memori.
+  const undoStack = useRef<string[]>([])
+  const redoStack = useRef<string[]>([])
+  const restoring = useRef(false)
 
   const drawing = useRef(false)
   const last = useRef<{ x: number; y: number } | null>(null)
@@ -94,6 +101,7 @@ export function DrawingCanvas({
   const [brushSize, setBrushSize] = useState<number>(BRUSH_SIZES[1].size)
   const [eraser, setEraser] = useState(false)
   const [dirty, setDirty] = useState(false)
+  const [history, setHistory] = useState({ undo: 0, redo: 0 })
 
   // Setiap jenis alat mengingat warnanya sendiri.
   useEffect(() => {
@@ -196,6 +204,117 @@ export function DrawingCanvas({
     }
   }, [onChange])
 
+  const syncHistory = useCallback(() => {
+    setHistory({ undo: undoStack.current.length, redo: redoStack.current.length })
+  }, [])
+
+  const captureBase = useCallback((): string | null => {
+    try {
+      return ensureLayer(baseLayer).toDataURL('image/png')
+    } catch {
+      return null
+    }
+  }, [ensureLayer])
+
+  const resetHistory = useCallback(() => {
+    undoStack.current = []
+    redoStack.current = []
+    syncHistory()
+  }, [syncHistory])
+
+  /** Simpan kondisi sebelum sebuah aksi dicatat ke riwayat. */
+  const pushUndo = useCallback(
+    (snapshot: string | null) => {
+      if (!snapshot) return
+      undoStack.current.push(snapshot)
+      if (undoStack.current.length > HISTORY_LIMIT) undoStack.current.shift()
+      redoStack.current = []
+      syncHistory()
+    },
+    [syncHistory],
+  )
+
+  const restoreSnapshot = useCallback(
+    async (dataUrl: string) => {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image()
+        img.onload = () => resolve(img)
+        img.onerror = () => reject(new Error('Gagal memuat riwayat gambar'))
+        img.src = dataUrl
+      })
+      const base = ensureLayer(baseLayer)
+      const ctx = base.getContext('2d')
+      if (!ctx) return
+      ctx.save()
+      ctx.globalAlpha = 1
+      ctx.globalCompositeOperation = 'source-over'
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, WIDTH, HEIGHT)
+      ctx.drawImage(image, 0, 0, WIDTH, HEIGHT)
+      ctx.restore()
+      clearStrokeLayer()
+      renderVisible()
+      emit()
+    },
+    [ensureLayer, clearStrokeLayer, renderVisible, emit],
+  )
+
+  const undo = useCallback(async () => {
+    if (restoring.current || undoStack.current.length === 0) return
+    restoring.current = true
+    try {
+      const current = captureBase()
+      if (!current) return
+      const previous = undoStack.current.pop()
+      if (!previous) return
+      redoStack.current.push(current)
+      if (redoStack.current.length > HISTORY_LIMIT) redoStack.current.shift()
+      await restoreSnapshot(previous)
+      setDirty(true)
+    } finally {
+      restoring.current = false
+      syncHistory()
+    }
+  }, [captureBase, restoreSnapshot, syncHistory])
+
+  const redo = useCallback(async () => {
+    if (restoring.current || redoStack.current.length === 0) return
+    restoring.current = true
+    try {
+      const current = captureBase()
+      if (!current) return
+      const next = redoStack.current.pop()
+      if (!next) return
+      undoStack.current.push(current)
+      if (undoStack.current.length > HISTORY_LIMIT) undoStack.current.shift()
+      await restoreSnapshot(next)
+      setDirty(true)
+    } finally {
+      restoring.current = false
+      syncHistory()
+    }
+  }, [captureBase, restoreSnapshot, syncHistory])
+
+  // Pintasan keyboard hanya aktif saat fokus berada di area gambar.
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      const root = rootRef.current
+      const target = event.target as Node | null
+      if (!root || !target || !root.contains(target)) return
+      if (!(event.ctrlKey || event.metaKey)) return
+      const key = event.key.toLowerCase()
+      if (key === 'z' && !event.shiftKey) {
+        event.preventDefault()
+        void undo()
+      } else if (key === 'y' || (key === 'z' && event.shiftKey)) {
+        event.preventDefault()
+        void redo()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [undo, redo])
+
   // Siapkan kanvas kosong saat pertama kali dipasang (hanya sekali).
   const initialized = useRef(false)
   useEffect(() => {
@@ -229,6 +348,7 @@ export function DrawingCanvas({
       ctx.drawImage(image, (WIDTH - drawWidth) / 2, (HEIGHT - drawHeight) / 2, drawWidth, drawHeight)
       ctx.restore()
       renderVisible()
+      resetHistory()
     }
     image.src = src
     return () => {
@@ -352,6 +472,7 @@ export function DrawingCanvas({
     const canvas = canvasRef.current
     const ctx = strokeContext()
     if (!canvas || !ctx) return
+    canvas.focus()
     try {
       canvas.setPointerCapture(event.pointerId)
     } catch {
@@ -390,12 +511,14 @@ export function DrawingCanvas({
     } catch {
       /* pointer sudah tidak aktif */
     }
+    pushUndo(captureBase())
     commitStroke()
     renderVisible()
     emit()
   }
 
   function clearCanvas() {
+    pushUndo(captureBase())
     paintBase()
     clearStrokeLayer()
     renderVisible()
@@ -407,12 +530,13 @@ export function DrawingCanvas({
   const activeLabel = eraser ? 'Penghapus' : BRUSH_TYPES.find((item) => item.id === brushType)?.label ?? ''
 
   return (
-    <div className="drawing">
+    <div className="drawing" ref={rootRef}>
       <canvas
         ref={canvasRef}
         className="drawing-canvas"
         width={WIDTH}
         height={HEIGHT}
+        tabIndex={0}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -484,6 +608,29 @@ export function DrawingCanvas({
         >
           <Icon name="eraser" size={18} />
         </button>
+
+        <div className="tool-group" role="group" aria-label="Riwayat">
+          <button
+            type="button"
+            className="tool-btn"
+            onClick={() => void undo()}
+            disabled={history.undo === 0}
+            title="Urungkan (Ctrl+Z)"
+            aria-label="Urungkan"
+          >
+            <Icon name="undo" size={18} />
+          </button>
+          <button
+            type="button"
+            className="tool-btn"
+            onClick={() => void redo()}
+            disabled={history.redo === 0}
+            title="Ulangi (Ctrl+Y)"
+            aria-label="Ulangi"
+          >
+            <Icon name="redo" size={18} />
+          </button>
+        </div>
 
         <button type="button" className="tool-btn tool-btn--text" onClick={clearCanvas} title="Bersihkan">
           Bersihkan
