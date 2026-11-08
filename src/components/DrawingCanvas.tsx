@@ -1,14 +1,77 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Icon } from './Icon'
+import type { MutableRefObject } from 'react'
+import { Icon, type IconName } from './Icon'
 
 const WIDTH = 960
 const HEIGHT = 640
-const BRUSHES = [
-  { label: 'Tipis', size: 3 },
-  { label: 'Sedang', size: 6 },
-  { label: 'Tebal', size: 14 },
+
+type BrushType = 'pen' | 'pencil' | 'highlighter' | 'crayon' | 'brush'
+type Texture = 'solid' | 'pencil' | 'crayon' | 'brush'
+
+const BRUSH_TYPES: { id: BrushType; label: string; icon: IconName }[] = [
+  { id: 'pen', label: 'Polpen', icon: 'pen' },
+  { id: 'pencil', label: 'Pensil', icon: 'pencil' },
+  { id: 'highlighter', label: 'Stabilo', icon: 'highlighter' },
+  { id: 'crayon', label: 'Crayon', icon: 'crayon' },
+  { id: 'brush', label: 'Kuas', icon: 'brush' },
+]
+
+const BRUSH_SIZES = [
+  { label: 'Tipis', size: 2 },
+  { label: 'Sedang', size: 5 },
+  { label: 'Tebal', size: 12 },
 ] as const
-const INKS = ['#1f1b16', '#c0392b', '#2b6cb0', '#2f855a', '#b7791f', '#7c3aed']
+
+// Palet warna menyesuaikan jenis alat.
+const PEN_INKS = ['#1f1b16', '#c0392b', '#2b6cb0', '#2f855a', '#b7791f', '#7c3aed']
+const PENCIL_INKS = ['#2d2d2d', '#5a4a3a', '#3a4a5a', '#3a5a3a', '#5a5a3a', '#4a3a5a']
+const HIGHLIGHTER_INKS = ['#ffe135', '#ff8fb1', '#5fe0d4', '#a8e6a1', '#ffc98f', '#b3c7ff']
+const CRAYON_INKS = ['#1a1a1a', '#a8321a', '#1f4e8c', '#1f6b33', '#a87b12', '#5b2a86']
+const BRUSH_INKS = ['#1f1b16', '#c0392b', '#2b6cb0', '#2f855a', '#b7791f', '#7c3aed']
+
+const INKS_BY_BRUSH: Record<BrushType, string[]> = {
+  pen: PEN_INKS,
+  pencil: PENCIL_INKS,
+  highlighter: HIGHLIGHTER_INKS,
+  crayon: CRAYON_INKS,
+  brush: BRUSH_INKS,
+}
+
+const DEFAULT_INK_BY_BRUSH: Record<BrushType, string> = {
+  pen: PEN_INKS[0],
+  pencil: PENCIL_INKS[0],
+  highlighter: HIGHLIGHTER_INKS[0],
+  crayon: CRAYON_INKS[0],
+  brush: BRUSH_INKS[0],
+}
+
+interface BrushProfile {
+  lineCap: CanvasLineCap
+  lineJoin: CanvasLineJoin
+  sizeScale: number
+  /** Opasitas akhir saat goresan ditempel ke kanvas. */
+  opacity: number
+  /** Opasitas tiap segmen pada layer goresan (agar tidak menumpuk). */
+  layerAlpha: number
+  texture: Texture
+}
+
+const BRUSH_PROFILES: Record<BrushType, BrushProfile> = {
+  pen: { lineCap: 'round', lineJoin: 'round', sizeScale: 1, opacity: 1, layerAlpha: 1, texture: 'solid' },
+  pencil: { lineCap: 'round', lineJoin: 'round', sizeScale: 0.9, opacity: 0.75, layerAlpha: 0.5, texture: 'pencil' },
+  highlighter: { lineCap: 'round', lineJoin: 'round', sizeScale: 2.6, opacity: 0.32, layerAlpha: 1, texture: 'solid' },
+  crayon: { lineCap: 'round', lineJoin: 'round', sizeScale: 1.5, opacity: 0.9, layerAlpha: 0.6, texture: 'crayon' },
+  brush: { lineCap: 'round', lineJoin: 'round', sizeScale: 1.7, opacity: 1, layerAlpha: 0.95, texture: 'brush' },
+}
+
+const ERASER_PROFILE: BrushProfile = {
+  lineCap: 'round',
+  lineJoin: 'round',
+  sizeScale: 2.2,
+  opacity: 1,
+  layerAlpha: 1,
+  texture: 'solid',
+}
 
 export function DrawingCanvas({
   src,
@@ -18,29 +81,110 @@ export function DrawingCanvas({
   onChange: (dataUrl: string) => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  // Layer dasar = konten yang sudah selesai; layer goresan = goresan aktif.
+  const baseLayer = useRef<HTMLCanvasElement | null>(null)
+  const strokeLayer = useRef<HTMLCanvasElement | null>(null)
+  const inkByBrush = useRef<Record<BrushType, string>>({ ...DEFAULT_INK_BY_BRUSH })
+
   const drawing = useRef(false)
   const last = useRef<{ x: number; y: number } | null>(null)
-  const [ink, setInk] = useState(INKS[0])
-  const [brush, setBrush] = useState<number>(BRUSHES[1].size)
+
+  const [brushType, setBrushType] = useState<BrushType>('pen')
+  const [ink, setInk] = useState<string>(DEFAULT_INK_BY_BRUSH.pen)
+  const [brushSize, setBrushSize] = useState<number>(BRUSH_SIZES[1].size)
   const [eraser, setEraser] = useState(false)
   const [dirty, setDirty] = useState(false)
+
+  // Setiap jenis alat mengingat warnanya sendiri.
+  useEffect(() => {
+    setInk(inkByBrush.current[brushType])
+    setEraser(false)
+  }, [brushType])
+
+  const ensureLayer = useCallback((ref: MutableRefObject<HTMLCanvasElement | null>) => {
+    if (!ref.current) {
+      const canvas = document.createElement('canvas')
+      canvas.width = WIDTH
+      canvas.height = HEIGHT
+      ref.current = canvas
+    }
+    return ref.current
+  }, [])
 
   const context = useCallback((): CanvasRenderingContext2D | null => {
     return canvasRef.current?.getContext('2d') ?? null
   }, [])
 
-  const paintBackground = useCallback(() => {
-    const ctx = context()
+  const strokeContext = useCallback((): CanvasRenderingContext2D | null => {
+    return ensureLayer(strokeLayer).getContext('2d')
+  }, [ensureLayer])
+
+  const currentProfile = useCallback(
+    (): BrushProfile => (eraser ? ERASER_PROFILE : BRUSH_PROFILES[brushType]),
+    [eraser, brushType],
+  )
+
+  const strokeWidth = useCallback(() => brushSize * currentProfile().sizeScale, [brushSize, currentProfile])
+
+  const paintBase = useCallback(() => {
+    const base = ensureLayer(baseLayer)
+    const ctx = base.getContext('2d')
     if (!ctx) return
     ctx.save()
+    ctx.globalAlpha = 1
+    ctx.globalCompositeOperation = 'source-over'
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, 0, WIDTH, HEIGHT)
     ctx.restore()
-  }, [context])
+  }, [ensureLayer])
 
-  useEffect(() => {
-    paintBackground()
-  }, [paintBackground])
+  const clearStrokeLayer = useCallback(() => {
+    const ctx = strokeContext()
+    if (!ctx) return
+    ctx.clearRect(0, 0, WIDTH, HEIGHT)
+  }, [strokeContext])
+
+  /** Susun ulang kanvas yang terlihat: layer dasar + goresan aktif. */
+  const renderVisible = useCallback(() => {
+    const ctx = context()
+    if (!ctx) return
+    const base = ensureLayer(baseLayer)
+    const stroke = ensureLayer(strokeLayer)
+    const profile = currentProfile()
+    ctx.save()
+    ctx.globalAlpha = 1
+    ctx.globalCompositeOperation = 'source-over'
+    ctx.clearRect(0, 0, WIDTH, HEIGHT)
+    ctx.drawImage(base, 0, 0)
+    if (eraser) {
+      ctx.globalCompositeOperation = 'destination-out'
+      ctx.globalAlpha = 1
+    } else {
+      ctx.globalAlpha = profile.opacity
+    }
+    ctx.drawImage(stroke, 0, 0)
+    ctx.restore()
+  }, [context, ensureLayer, currentProfile, eraser])
+
+  /** Tempelkan goresan aktif ke layer dasar. */
+  const commitStroke = useCallback(() => {
+    const base = ensureLayer(baseLayer)
+    const stroke = ensureLayer(strokeLayer)
+    const ctx = base.getContext('2d')
+    if (!ctx) return
+    const profile = currentProfile()
+    ctx.save()
+    if (eraser) {
+      ctx.globalCompositeOperation = 'destination-out'
+      ctx.globalAlpha = 1
+    } else {
+      ctx.globalCompositeOperation = 'source-over'
+      ctx.globalAlpha = profile.opacity
+    }
+    ctx.drawImage(stroke, 0, 0)
+    ctx.restore()
+    clearStrokeLayer()
+  }, [ensureLayer, currentProfile, eraser, clearStrokeLayer])
 
   const emit = useCallback(() => {
     const canvas = canvasRef.current
@@ -52,26 +196,46 @@ export function DrawingCanvas({
     }
   }, [onChange])
 
-  // Muat gambar yang sudah ada (mode edit) di atas kanvas kosong.
+  // Siapkan kanvas kosong saat pertama kali dipasang (hanya sekali).
+  const initialized = useRef(false)
   useEffect(() => {
-    if (!src) return
+    if (initialized.current) return
+    initialized.current = true
+    paintBase()
+    clearStrokeLayer()
+    renderVisible()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Muat gambar yang sudah ada (mode edit) ke layer dasar, sekali per src.
+  const loadedSrc = useRef<string | null>(null)
+  useEffect(() => {
+    if (!src || src === loadedSrc.current) return
+    loadedSrc.current = src
     let cancelled = false
     const image = new Image()
     image.crossOrigin = 'anonymous'
     image.onload = () => {
       if (cancelled) return
-      const ctx = context()
+      const base = ensureLayer(baseLayer)
+      const ctx = base.getContext('2d')
       if (!ctx) return
       const scale = Math.min(WIDTH / image.width, HEIGHT / image.height, 1)
       const drawWidth = image.width * scale
       const drawHeight = image.height * scale
+      ctx.save()
+      ctx.globalAlpha = 1
+      ctx.globalCompositeOperation = 'source-over'
       ctx.drawImage(image, (WIDTH - drawWidth) / 2, (HEIGHT - drawHeight) / 2, drawWidth, drawHeight)
+      ctx.restore()
+      renderVisible()
     }
     image.src = src
     return () => {
       cancelled = true
     }
-  }, [src, context])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src])
 
   function pointFrom(event: React.PointerEvent<HTMLCanvasElement>) {
     const canvas = canvasRef.current
@@ -83,17 +247,110 @@ export function DrawingCanvas({
     }
   }
 
-  function strokeStyle(ctx: CanvasRenderingContext2D) {
-    ctx.lineCap = 'round'
-    ctx.lineJoin = 'round'
-    ctx.strokeStyle = eraser ? '#ffffff' : ink
-    ctx.fillStyle = eraser ? '#ffffff' : ink
-    ctx.lineWidth = eraser ? brush * 2.2 : brush
+  function applyStrokeStyle(ctx: CanvasRenderingContext2D) {
+    const profile = currentProfile()
+    ctx.lineCap = profile.lineCap
+    ctx.lineJoin = profile.lineJoin
+    ctx.lineWidth = strokeWidth()
+    ctx.strokeStyle = eraser ? '#000000' : ink
+    ctx.fillStyle = eraser ? '#000000' : ink
+    ctx.globalAlpha = profile.layerAlpha
+    ctx.globalCompositeOperation = 'source-over'
+  }
+
+  /** Garis bertekstur (pensil / crayon): beberapa garis tipis dengan offset acak. */
+  function drawTexturedSegment(
+    ctx: CanvasRenderingContext2D,
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+    size: number,
+    lines: number,
+    spread: number,
+  ) {
+    const angle = Math.atan2(to.y - from.y, to.x - from.x)
+    const nx = Math.sin(angle)
+    const ny = -Math.cos(angle)
+    const baseWidth = ctx.lineWidth
+    const baseAlpha = ctx.globalAlpha
+    for (let i = 0; i < lines; i++) {
+      const offset = (Math.random() - 0.5) * size * spread
+      ctx.lineWidth = baseWidth * (0.32 + Math.random() * 0.28)
+      ctx.globalAlpha = baseAlpha * (0.55 + Math.random() * 0.45)
+      ctx.beginPath()
+      ctx.moveTo(from.x + nx * offset, from.y + ny * offset)
+      ctx.lineTo(to.x + nx * offset, to.y + ny * offset)
+      ctx.stroke()
+    }
+    ctx.lineWidth = baseWidth
+    ctx.globalAlpha = baseAlpha
+  }
+
+  /** Kuas: goresan dengan beberapa "bulu" yang sedikit menyimpang. */
+  function drawBrushSegment(
+    ctx: CanvasRenderingContext2D,
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+    size: number,
+  ) {
+    const angle = Math.atan2(to.y - from.y, to.x - from.x)
+    const nx = Math.sin(angle)
+    const ny = -Math.cos(angle)
+    const baseWidth = ctx.lineWidth
+    const baseAlpha = ctx.globalAlpha
+
+    const strand = (offset: number, widthScale: number, alphaScale: number) => {
+      const wobble = (Math.random() - 0.5) * size * 0.35
+      ctx.lineWidth = baseWidth * widthScale
+      ctx.globalAlpha = baseAlpha * alphaScale
+      const ox = nx * offset
+      const oy = ny * offset
+      ctx.beginPath()
+      ctx.moveTo(from.x + ox, from.y + oy)
+      ctx.quadraticCurveTo(
+        (from.x + to.x) / 2 + nx * wobble + ox,
+        (from.y + to.y) / 2 + ny * wobble + oy,
+        to.x + ox,
+        to.y + oy,
+      )
+      ctx.stroke()
+    }
+
+    // Inti tebal + dua bulu tipis di tepi memberi kesan kuas berbulu.
+    strand(0, 0.72, 1)
+    strand(-size * 0.28, 0.26, 0.55)
+    strand(size * 0.28, 0.26, 0.55)
+
+    ctx.lineWidth = baseWidth
+    ctx.globalAlpha = baseAlpha
+  }
+
+  function drawSegment(
+    ctx: CanvasRenderingContext2D,
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+  ) {
+    const size = strokeWidth()
+    switch (currentProfile().texture) {
+      case 'pencil':
+        drawTexturedSegment(ctx, from, to, size, 3, 0.9)
+        break
+      case 'crayon':
+        drawTexturedSegment(ctx, from, to, size, 5, 1.1)
+        break
+      case 'brush':
+        drawBrushSegment(ctx, from, to, size)
+        break
+      default:
+        ctx.beginPath()
+        ctx.moveTo(from.x, from.y)
+        ctx.lineTo(to.x, to.y)
+        ctx.stroke()
+    }
   }
 
   function handlePointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
     const canvas = canvasRef.current
-    const ctx = context()
+    const ctx = strokeContext()
     if (!canvas || !ctx) return
     try {
       canvas.setPointerCapture(event.pointerId)
@@ -103,25 +360,25 @@ export function DrawingCanvas({
     drawing.current = true
     const point = pointFrom(event)
     last.current = point
-    strokeStyle(ctx)
+    clearStrokeLayer()
+    applyStrokeStyle(ctx)
     ctx.beginPath()
-    ctx.arc(point.x, point.y, (eraser ? brush * 2.2 : brush) / 2, 0, Math.PI * 2)
+    ctx.arc(point.x, point.y, strokeWidth() / 2, 0, Math.PI * 2)
     ctx.fill()
+    renderVisible()
   }
 
   function handlePointerMove(event: React.PointerEvent<HTMLCanvasElement>) {
     if (!drawing.current) return
-    const ctx = context()
+    const ctx = strokeContext()
     if (!ctx) return
     const point = pointFrom(event)
     const previous = last.current ?? point
-    strokeStyle(ctx)
-    ctx.beginPath()
-    ctx.moveTo(previous.x, previous.y)
-    ctx.lineTo(point.x, point.y)
-    ctx.stroke()
+    applyStrokeStyle(ctx)
+    drawSegment(ctx, previous, point)
     last.current = point
     if (!dirty) setDirty(true)
+    renderVisible()
   }
 
   function handlePointerUp(event: React.PointerEvent<HTMLCanvasElement>) {
@@ -133,14 +390,21 @@ export function DrawingCanvas({
     } catch {
       /* pointer sudah tidak aktif */
     }
+    commitStroke()
+    renderVisible()
     emit()
   }
 
   function clearCanvas() {
-    paintBackground()
+    paintBase()
+    clearStrokeLayer()
+    renderVisible()
     setDirty(true)
     emit()
   }
+
+  const currentInks = INKS_BY_BRUSH[brushType]
+  const activeLabel = eraser ? 'Penghapus' : BRUSH_TYPES.find((item) => item.id === brushType)?.label ?? ''
 
   return (
     <div className="drawing">
@@ -156,16 +420,34 @@ export function DrawingCanvas({
       />
 
       <div className="drawing-tools">
-        <div className="ink-row" role="group" aria-label="Warna pena">
-          {INKS.map((color) => (
+        <div className="tool-group brush-type-group" role="group" aria-label="Jenis alat">
+          {BRUSH_TYPES.map((bt) => (
+            <button
+              key={bt.id}
+              type="button"
+              data-brush={bt.id}
+              className={`tool-btn${brushType === bt.id ? ' is-active' : ''}`}
+              onClick={() => setBrushType(bt.id)}
+              title={bt.label}
+              aria-label={bt.label}
+              aria-pressed={brushType === bt.id}
+            >
+              <Icon name={bt.icon} size={18} />
+            </button>
+          ))}
+        </div>
+
+        <div className="ink-row" role="group" aria-label="Warna">
+          {currentInks.map((color) => (
             <button
               key={color}
               type="button"
               className={`ink${!eraser && ink === color ? ' is-active' : ''}`}
               style={{ background: color }}
-              aria-label={`Pena ${color}`}
+              aria-label={`Warna ${color}`}
               aria-pressed={!eraser && ink === color}
               onClick={() => {
+                inkByBrush.current[brushType] = color
                 setInk(color)
                 setEraser(false)
               }}
@@ -174,18 +456,20 @@ export function DrawingCanvas({
         </div>
 
         <div className="tool-group" role="group" aria-label="Ketebalan">
-          {BRUSHES.map((item) => (
+          {BRUSH_SIZES.map((item) => (
             <button
               key={item.size}
               type="button"
-              className={`tool-btn${!eraser && brush === item.size ? ' is-active' : ''}`}
+              className={`tool-btn${!eraser && brushSize === item.size ? ' is-active' : ''}`}
               onClick={() => {
-                setBrush(item.size)
+                setBrushSize(item.size)
                 setEraser(false)
               }}
               title={item.label}
+              aria-label={`Ketebalan ${item.label}`}
+              aria-pressed={!eraser && brushSize === item.size}
             >
-              <span className="brush-dot" style={{ width: item.size + 4, height: item.size + 4 }} />
+              <span className="brush-dot" style={{ width: item.size + 6, height: item.size + 6 }} />
             </button>
           ))}
         </div>
@@ -195,6 +479,7 @@ export function DrawingCanvas({
           className={`tool-btn${eraser ? ' is-active' : ''}`}
           onClick={() => setEraser((value) => !value)}
           title="Penghapus"
+          aria-label="Penghapus"
           aria-pressed={eraser}
         >
           <Icon name="eraser" size={18} />
@@ -204,7 +489,9 @@ export function DrawingCanvas({
           Bersihkan
         </button>
 
-        <span className="drawing-hint">{dirty ? 'Gambar tersimpan otomatis' : 'Gambar di area putih'}</span>
+        <span className="drawing-hint">
+          {activeLabel} &middot; {dirty ? 'Tersimpan otomatis' : 'Gambar di area putih'}
+        </span>
       </div>
     </div>
   )

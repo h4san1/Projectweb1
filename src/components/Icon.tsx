@@ -4,6 +4,10 @@ export type IconName =
   | 'notes'
   | 'checklist'
   | 'brush'
+  | 'pen'
+  | 'pencil'
+  | 'highlighter'
+  | 'crayon'
   | 'image'
   | 'search'
   | 'pin'
@@ -35,8 +39,36 @@ const PATHS: Record<IconName, ReactElement> = {
   ),
   brush: (
     <>
-      <path d="M4 20.5l3.6-.9 9.7-9.7a2.2 2.2 0 0 0-3.1-3.1L4.5 16.5 4 20.5Z" />
-      <path d="M13.6 6.4l4 4" />
+      <path d="M9.1 11.9 17.2 3.8a2.85 2.85 0 1 1 4 4L13.1 15.9" />
+      <path d="M7.1 14.9c-1.7 0-3 1.4-3 3 0 1.3-2.5 1.5-2 2 1.1 1.1 2.5 2 4 2 2.2 0 4-1.8 4-4a3 3 0 0 0-3-3Z" />
+    </>
+  ),
+  pen: (
+    <>
+      <path d="M12 2.8 18.6 9.2 13.4 19.6 12 17.8 10.6 19.6 5.4 9.2 12 2.8Z" />
+      <path d="M12 2.8v15" />
+      <circle cx="12" cy="11.2" r="1.1" />
+    </>
+  ),
+  pencil: (
+    <>
+      <path d="M4 20l1.2-4.8L16.8 3.6a2 2 0 0 1 2.8 2.8L8.8 18.8 4 20Z" />
+      <path d="M15.2 5.2l3.6 3.6" />
+      <path d="M5.2 15.2l3.6 3.6" />
+    </>
+  ),
+  highlighter: (
+    <>
+      <rect x="8" y="2.5" width="8" height="10" rx="1.6" />
+      <path d="M9 12.5h6l1.5 3.5v3a2 2 0 0 1-2 2h-5a2 2 0 0 1-2-2v-3l1.5-3.5Z" />
+      <path d="M8.5 6h7" />
+    </>
+  ),
+  crayon: (
+    <>
+      <path d="M9 2.5 12 5l3-2.5V8l1 2v9a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-9l1-2V2.5Z" />
+      <path d="M8.5 8.5h7" />
+      <path d="M8.5 15h7" />
     </>
   ),
   image: (
