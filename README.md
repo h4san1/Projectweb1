@@ -18,6 +18,9 @@ kanvas, dan menyimpan foto. Setiap pengguna punya catatan sendiri; data tidak pe
 - **Foto** — pilih dari perangkat, otomatis diperkecil sebelum diunggah ke Supabase Storage.
 - **Rapi-rapi** — sematkan (pin), arsipkan, buang ke sampah, pulihkan, hapus permanen, warna kartu,
   dan pencarian judul/isi/checklist.
+- **Papan bebas** — geser kartu ke posisi mana pun, tarik pojok kanan bawah untuk memperbesar atau
+  memperkecil, lalu tekan **Rapikan** untuk kembali ke susunan awal. Tata letak disimpan di
+  perangkat (localStorage) dan tidak mengubah data catatan.
 
 ## Teknologi
 
@@ -32,6 +35,7 @@ src/
   App.tsx                  gerbang konfigurasi & sesi
   components/
     Workspace.tsx          daftar catatan, pencarian, tab, overlay editor
+    NoteBoard.tsx          papan bebas: geser + ubah ukuran kartu
     NoteComposer.tsx       form catatan baru (4 jenis)
     NoteEditor.tsx         editor + autosave + aksi pin/arsip/sampah
     DrawingCanvas.tsx      kanvas gambar + toolbar
@@ -42,6 +46,7 @@ src/
   lib/
     supabase.ts            klien Supabase
     notes.ts               CRUD tabel notes
+    layout.ts              simpan posisi & ukuran kartu di localStorage
     media.ts               upload + signed URL storage
     image.ts               kompresi foto, konversi dataURL
     types.ts               tipe & palet warna
@@ -123,3 +128,5 @@ File `public/_redirects` berisi `/* /index.html 200` supaya rute SPA tetap beker
 - Foto diperkecil ke maksimal 1600 px sisi terpanjang, kualitas JPEG 0.85.
 - Menghapus permanen juga menghapus file gambar di storage. Mengganti gambar meninggalkan file lama
   di storage; bersihkan berkala lewat dashboard bila perlu.
+- Posisi dan ukuran kartu di papan disimpan di `localStorage` (per pengguna), jadi tata letak hanya
+  berlaku di browser tersebut. Data catatan tetap tersimpan di Supabase.

@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createNote, deleteNoteForever, fetchNotes, patchNote } from '../lib/notes'
 import { getImageUrls } from '../lib/media'
 import { errorMessage } from '../lib/errors'
+import { loadLayouts, saveLayouts, type CardLayout } from '../lib/layout'
 import type { NewNote, Note, NotePatch } from '../lib/types'
 import { Icon, type IconName } from './Icon'
-import { NoteCard } from './NoteCard'
+import { NoteBoard } from './NoteBoard'
 import { NoteComposer } from './NoteComposer'
 import { NoteEditor } from './NoteEditor'
 
@@ -53,6 +54,7 @@ export function Workspace({
   const [query, setQuery] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({})
+  const [layouts, setLayouts] = useState<Record<string, CardLayout>>(() => loadLayouts(userId))
   const [toast, setToast] = useState<string | null>(null)
   const toastTimer = useRef<number | null>(null)
 
@@ -98,6 +100,24 @@ export function Workspace({
     void load()
   }, [load])
 
+  useEffect(() => {
+    setLayouts(loadLayouts(userId))
+  }, [userId])
+
+  const handleLayoutsChange = useCallback(
+    (next: Record<string, CardLayout>) => {
+      setLayouts(next)
+      saveLayouts(userId, next)
+    },
+    [userId],
+  )
+
+  const handleResetLayout = useCallback(() => {
+    setLayouts({})
+    saveLayouts(userId, {})
+    notify('Tata letak dirapikan')
+  }, [userId, notify])
+
   const applyPatch = useCallback(
     async (id: string, patch: NotePatch) => {
       setNotes((prev) =>
@@ -131,13 +151,20 @@ export function Workspace({
       try {
         await deleteNoteForever(note)
         setNotes((prev) => prev.filter((item) => item.id !== note.id))
+        setLayouts((prev) => {
+          if (!prev[note.id]) return prev
+          const next = { ...prev }
+          delete next[note.id]
+          saveLayouts(userId, next)
+          return next
+        })
         setEditingId(null)
         notify('Catatan dihapus permanen')
       } catch (err) {
         notify(errorMessage(err))
       }
     },
-    [notify],
+    [userId, notify],
   )
 
   const counts = useMemo(
@@ -277,16 +304,14 @@ export function Workspace({
             <p>{query ? `Tidak ada catatan yang mengandung "${query}".` : copy.emptyHint}</p>
           </div>
         ) : (
-          <div className="grid">
-            {visible.map((note) => (
-              <NoteCard
-                key={note.id}
-                note={note}
-                imageUrl={note.media_path ? mediaUrls[note.media_path] : undefined}
-                onOpen={() => setEditingId(note.id)}
-              />
-            ))}
-          </div>
+          <NoteBoard
+            notes={visible}
+            layouts={layouts}
+            imageUrls={mediaUrls}
+            onOpen={setEditingId}
+            onLayoutsChange={handleLayoutsChange}
+            onResetLayout={handleResetLayout}
+          />
         )}
       </div>
 

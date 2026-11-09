@@ -737,6 +737,237 @@ textarea:focus-visible,
   animation: shimmer 1.5s linear infinite;
 }
 
+/* ------------------------------------------------------------ papan bebas */
+
+.board-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 2px 12px;
+}
+
+.board-hint {
+  display: flex;
+  flex: 1 1 280px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.board-bar > .btn {
+  flex: 0 0 auto;
+}
+
+.board-hint-icon {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.board {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  min-height: 360px;
+}
+
+.board-item {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: var(--card-z, 0);
+  border-radius: var(--radius);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.board-item:hover,
+.board-item:focus-within {
+  z-index: 300;
+}
+
+.board-item.is-move,
+.board-item.is-resize {
+  z-index: 400;
+}
+
+.board-item .note-card {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  cursor: grab;
+  transition: box-shadow 0.18s;
+}
+
+.board-item .note-card:hover {
+  transform: none;
+  box-shadow: var(--shadow-md);
+}
+
+.board-item.is-move .note-card {
+  cursor: grabbing;
+  box-shadow: var(--shadow-md);
+}
+
+.board-item .note-title {
+  flex: 0 0 auto;
+}
+
+.board-item .note-text {
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  -webkit-line-clamp: unset;
+  -webkit-mask-image: linear-gradient(180deg, #000 80%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 80%, transparent 100%);
+}
+
+.board-item .note-checklist {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(180deg, #000 86%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 86%, transparent 100%);
+}
+
+.board-item .note-media {
+  flex: 1 1 auto;
+  min-height: 84px;
+  margin-bottom: 10px;
+  aspect-ratio: auto;
+}
+
+.board-item .note-media--drawing {
+  aspect-ratio: auto;
+}
+
+.board-item .note-foot {
+  flex: 0 0 auto;
+  margin-top: auto;
+  padding-top: 10px;
+}
+
+.board-item .note-foot span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Pegangan geser di atas kartu */
+.drag-grip {
+  position: absolute;
+  top: -11px;
+  left: 12px;
+  z-index: 3;
+  width: 34px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid rgba(34, 31, 26, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #8b8272;
+  box-shadow: var(--shadow-xs);
+  cursor: grab;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 0.15s, transform 0.15s, background 0.15s, color 0.15s;
+  touch-action: none;
+}
+
+.board-item:hover .drag-grip,
+.board-item:focus-within .drag-grip {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.drag-grip:hover {
+  color: var(--accent);
+  background: #fff;
+}
+
+.drag-grip:active {
+  cursor: grabbing;
+}
+
+.grip-dots {
+  width: 14px;
+  height: 10px;
+  background-image: radial-gradient(currentColor 1.1px, transparent 1.2px);
+  background-size: 5px 5px;
+  background-position: 1px 0;
+  opacity: 0.9;
+}
+
+/* Pegangan ubah ukuran di pojok kanan bawah */
+.resize-handle {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  z-index: 3;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(34, 31, 26, 0.12);
+  border-radius: 9px;
+  background: #fff;
+  color: #8b8272;
+  box-shadow: var(--shadow-xs);
+  cursor: nwse-resize;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+  touch-action: none;
+}
+
+.board-item:hover .resize-handle,
+.board-item:focus-within .resize-handle,
+.board-item.is-resize .resize-handle {
+  opacity: 1;
+}
+
+.resize-handle:hover {
+  color: var(--accent);
+  background: #fff;
+}
+
+@media (hover: none), (any-pointer: coarse) {
+  .drag-grip {
+    opacity: 0.92;
+    width: 42px;
+    height: 26px;
+    top: -13px;
+    transform: none;
+  }
+
+  .resize-handle {
+    opacity: 0.92;
+    width: 30px;
+    height: 30px;
+    right: -8px;
+    bottom: -8px;
+  }
+}
+
 /* ----------------------------------------------------------- empty state */
 
 .state {
